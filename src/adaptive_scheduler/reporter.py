@@ -1,71 +1,69 @@
-import json
-from pathlib import Path
-from typing import Dict, Any, Union
+﻿import json
+from typing import Dict, Any
 import pandas as pd
 
 
 class PerformanceReporter:
-    """Analyzes benchmark DataFrames and computes performance metrics."""
+    """Analyzes benchmark DataFrames and generates relative performance metrics."""
 
-    def __init__(self, results_df: pd.DataFrame):
-        self.df = results_df.copy()
+    def __init__(self, df: pd.DataFrame):
+        self.df = df
 
-    def compute_summary(self) -> Dict[str, Any]:
-        """Calculate percentage improvements of Adaptive Scheduler vs baseline average."""
-        if self.df.empty:
-            return {}
+    def generate_summary(self) -> Dict[str, Any]:
+        metrics = [
+            "makespan",
+            "avg_turnaround_time",
+            "avg_waiting_time",
+            "deadline_miss_rate",
+            "energy_consumed_kwh",
+        ]
+        summary = {}
+        scenarios = self.df["scenario"].unique()
 
-        metrics = ["makespan", "turnaround_time", "waiting_time", "deadline_miss_rate", "energy_kwh"]
-        summary: Dict[str, Any] = {}
-
-        for scenario in self.df["scenario"].unique():
+        for scenario in scenarios:
             scen_df = self.df[self.df["scenario"] == scenario]
-            adaptive_row = scen_df[scen_df["algorithm"] == "Adaptive"]
-            baseline_rows = scen_df[scen_df["algorithm"] != "Adaptive"]
+            adaptive_row = scen_df[scen_df["algorithm"] == "adaptive"]
+            baselines_df = scen_df[scen_df["algorithm"] != "adaptive"]
 
-            if adaptive_row.empty or baseline_rows.empty:
+            if adaptive_row.empty or baselines_df.empty:
                 continue
 
-            scen_summary: Dict[str, float] = {}
+            scen_summary = {}
             for metric in metrics:
                 if metric in scen_df.columns:
                     adapt_val = float(adaptive_row[metric].values[0])
-                    base_avg = float(baseline_rows[metric].mean())
+                    base_avg = float(baselines_df[metric].mean())
 
                     if base_avg != 0:
-                        improvement = ((base_avg - adapt_val) / base_avg) * 100.0
+                        pct_imp = ((base_avg - adapt_val) / base_avg) * 100.0
                     else:
-                        improvement = 0.0
+                        pct_imp = 0.0
 
-                    scen_summary[f"{metric}_reduction_pct"] = round(improvement, 2)
-
+                    scen_summary[metric] = {
+                        "adaptive": adapt_val,
+                        "baseline_avg": base_avg,
+                        "improvement_pct": round(pct_imp, 2),
+                    }
             summary[scenario] = scen_summary
 
         return summary
 
-    def export_json(self, filepath: Union[str, Path]) -> None:
-        """Export calculated summary stats to a JSON file."""
-        path = Path(filepath)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        summary = self.compute_summary()
-        with open(path, "w", encoding="utf-8") as f:
+    def export_json(
+        self, filepath: str = "outputs/evaluation/benchmark_summary.json"
+    ) -> None:
+        summary = self.generate_summary()
+        with open(filepath, "w") as f:
             json.dump(summary, f, indent=4)
 
-    def export_markdown(self, filepath: Union[str, Path]) -> None:
-        """Export benchmark summary as formatted Markdown tables."""
-        path = Path(filepath)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        summary = self.compute_summary()
-
-        md_lines = ["# Performance Reporter Summary\n"]
+    def to_markdown_table(self) -> str:
+        summary = self.generate_summary()
+        lines = [
+            "| Scenario | Metric | Adaptive | Baseline Avg | Improvement (%) |",
+            "|---|---|---|---|---|",
+        ]
         for scenario, metrics in summary.items():
-            md_lines.append(f"## Scenario: {scenario.capitalize()}")
-            md_lines.append("| Metric | Adaptive Improvement (%) |")
-            md_lines.append("| --- | --- |")
-            for metric_name, val in metrics.items():
-                formatted_name = metric_name.replace("_reduction_pct", "").replace("_", " ").title()
-                md_lines.append(f"| {formatted_name} | {val}% |")
-            md_lines.append("")
-
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(md_lines))
+            for metric, vals in metrics.items():
+                lines.append(
+                    f"| {scenario} | {metric} | {vals['adaptive']:.2f} | {vals['baseline_avg']:.2f} | {vals['improvement_pct']:.2f}% |"
+                )
+        return "\n".join(lines)
