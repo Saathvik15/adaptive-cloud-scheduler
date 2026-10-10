@@ -1,6 +1,6 @@
 import random
 import numpy as np
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from adaptive_scheduler.models import Job, VMProfile
 
 
@@ -78,6 +78,14 @@ class PSOScheduler:
 
         return {_get_job_id(jobs[j], f"j{j}"): _get_vm_id(vms[gbest[j]], f"vm{gbest[j]}") for j in range(num_jobs)}
 
+    def select_vm(self, job: Job, vms: List[VMProfile]) -> Tuple[VMProfile, float]:
+        mapping = self.schedule([job], vms)
+        assigned_vm_id = mapping.get(_get_job_id(job, "j"))
+        for vm in vms:
+            if _get_vm_id(vm, "") == assigned_vm_id:
+                return vm, 1.0
+        return vms[0], 1.0
+
 
 class HEFTScheduler:
     """Heterogeneous Earliest Finish Time heuristic."""
@@ -109,6 +117,14 @@ class HEFTScheduler:
             vm_available_times[best_v_id] = earliest_finish
 
         return assignments
+
+    def select_vm(self, job: Job, vms: List[VMProfile]) -> Tuple[VMProfile, float]:
+        mapping = self.schedule([job], vms)
+        assigned_vm_id = mapping.get(_get_job_id(job, "j"))
+        for vm in vms:
+            if _get_vm_id(vm, "") == assigned_vm_id:
+                return vm, 1.0
+        return vms[0], 1.0
 
 
 class DQNScheduler:
@@ -144,3 +160,11 @@ class DQNScheduler:
             assignments[j_id] = v_id
 
         return assignments
+
+    def select_vm(self, job: Job, vms: List[VMProfile]) -> Tuple[VMProfile, float]:
+        mapping = self.schedule([job], vms)
+        assigned_vm_id = mapping.get(_get_job_id(job, "j"))
+        for vm in vms:
+            if _get_vm_id(vm, "") == assigned_vm_id:
+                return vm, 1.0
+        return vms[0], 1.0

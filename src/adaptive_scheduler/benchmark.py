@@ -6,6 +6,7 @@ import pandas as pd
 from adaptive_scheduler.engine import SimulationEngine
 from adaptive_scheduler.profiles import default_vm_profiles
 from adaptive_scheduler.scheduler import AdaptiveScheduler
+from adaptive_scheduler.modern_baselines import PSOScheduler, HEFTScheduler, DQNScheduler
 from adaptive_scheduler.workloads import generate_workload
 
 
@@ -16,7 +17,12 @@ def run_benchmark(
 ) -> pd.DataFrame:
     """Executes all schedulers across specified scenarios and aggregates performance metrics."""
     records: List[Dict[str, Any]] = []
-    baselines = ["fcfs", "round_robin", "min_min", "max_min", "priority"]
+    traditional_baselines = ["fcfs", "round_robin", "min_min", "max_min", "priority"]
+    modern_schedulers = {
+        "PSO": PSOScheduler(),
+        "HEFT": HEFTScheduler(),
+        "DQN": DQNScheduler(),
+    }
 
     for scenario in scenarios:
         count = custom_job_counts.get(scenario) if custom_job_counts else None
@@ -37,8 +43,8 @@ def run_benchmark(
             "energy_consumed_kwh": metrics_adaptive.energy_consumed_kwh,
         })
 
-        # 2. Run Baseline Schedulers
-        for algo in baselines:
+        # 2. Run Traditional Baseline Schedulers
+        for algo in traditional_baselines:
             engine_base = SimulationEngine(vms)
             metrics_base = engine_base.run_baseline(jobs, algo)
             records.append({
@@ -49,6 +55,25 @@ def run_benchmark(
                 "avg_waiting_time": metrics_base.avg_waiting_time,
                 "deadline_miss_rate": metrics_base.deadline_miss_rate,
                 "energy_consumed_kwh": metrics_base.energy_consumed_kwh,
+            })
+
+        # 3. Run Modern Baseline Schedulers (PSO, HEFT, DQN)
+        for name, modern_sched in modern_schedulers.items():
+            engine_modern = SimulationEngine(vms)
+            # Run via custom schedule method mapping if supported, or adaptive engine wrapper
+            if hasattr(engine_modern, "run_custom"):
+                metrics_modern = engine_modern.run_custom(jobs, modern_sched)
+            else:
+                metrics_modern = engine_modern.run_adaptive(jobs, modern_sched)
+
+            records.append({
+                "scenario": scenario,
+                "algorithm": name,
+                "makespan": metrics_modern.makespan,
+                "avg_turnaround_time": metrics_modern.avg_turnaround_time,
+                "avg_waiting_time": metrics_modern.avg_waiting_time,
+                "deadline_miss_rate": metrics_modern.deadline_miss_rate,
+                "energy_consumed_kwh": metrics_modern.energy_consumed_kwh,
             })
 
     return pd.DataFrame(records)
@@ -67,7 +92,7 @@ def generate_benchmark_plots(df: pd.DataFrame, output_dir: str = "plots") -> Non
 
     scenarios = df["scenario"].unique()
     for metric, ylabel, title in metrics:
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(12, 6))
         pivot_df = df.pivot(index="scenario", columns="algorithm", values=metric)
         pivot_df = pivot_df.reindex(scenarios)
 
@@ -77,6 +102,7 @@ def generate_benchmark_plots(df: pd.DataFrame, output_dir: str = "plots") -> Non
         ax.set_xlabel("Workload Scenario", fontsize=12)
         ax.grid(axis="y", linestyle="--", alpha=0.7)
         plt.xticks(rotation=0)
+        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
         plt.tight_layout()
 
         file_path = os.path.join(output_dir, f"{metric}_comparison.png")
